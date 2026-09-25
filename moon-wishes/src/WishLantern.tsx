@@ -2,6 +2,7 @@ import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Line, Sparkles } from '@react-three/drei';
 import * as THREE from 'three';
+import { lanternPaper, petalSurface } from './moonMaterials';
 
 // All animation is anchored at the base, so the lantern stays in her hands at rest.
 export const WISH_LANTERN_HOME = [-.254, 2.61, 2.238] as const;
@@ -11,14 +12,18 @@ export default function WishLantern({ reduced, sparkle = true }: { reduced: bool
   const ribbons = useRef<THREE.Group>(null);
   const profile = useMemo(() => [[.09, -.32], [.19, -.25], [.27, -.08], [.29, .12], [.23, .32], [.12, .4]].map(([r, y]) => new THREE.Vector2(r, y)), []);
   const petal = useMemo(() => {
-    const positions: number[] = [], indices: number[] = [], rows = 20, columns = 10;
+    const positions: number[] = [], uv: number[] = [], colors: number[] = [], indices: number[] = [], rows = 20, columns = 10;
+    const color = new THREE.Color();
     for (let j = 0; j <= rows; j++) for (let i = 0; i <= columns; i++) {
       const t = j / rows, across = i / columns * 2 - 1;
       const width = .17 * Math.pow(Math.sin(Math.PI * t), .8);
       positions.push(across * width, -.32 + t * .66 - across * across * .035, .1 + .32 * Math.sin(t * Math.PI * .65) - across * across * .085);
+      uv.push(i / columns, t);
+      color.set('#b8566c').lerp(new THREE.Color('#ffe5c5'), Math.pow(t, .65));
+      colors.push(color.r, color.g, color.b);
       if (j < rows && i < columns) { const n = j * (columns + 1) + i; indices.push(n, n + 1, n + columns + 2, n, n + columns + 2, n + columns + 1); }
     }
-    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3)); geo.setIndex(indices); geo.computeVertexNormals(); return geo;
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3)); geo.setIndex(indices); geo.computeVertexNormals(); return geo;
   }, []);
   useFrame(({ clock }) => {
     const breath = reduced ? 0 : Math.sin(clock.elapsedTime * 1.6);
@@ -26,9 +31,9 @@ export default function WishLantern({ reduced, sparkle = true }: { reduced: bool
     if (ribbons.current) { ribbons.current.rotation.z = breath * .055; ribbons.current.rotation.x = reduced ? 0 : Math.sin(clock.elapsedTime * 1.15) * .06; }
   });
   return <group>
-    <mesh castShadow><latheGeometry args={[profile,48]}/><meshStandardMaterial ref={heart} color="#ffe5b7" emissive="#ffc879" emissiveIntensity={1.25} roughness={.45}/></mesh>
+    <mesh castShadow><latheGeometry args={[profile,48]}/><meshStandardMaterial ref={heart} map={lanternPaper} emissiveMap={lanternPaper} color="#ffe5b7" emissive="#ffc879" emissiveIntensity={1.25} roughness={.6}/></mesh>
     {Array.from({ length: 8 }, (_, i) => <group key={i} rotation-y={i * Math.PI / 4}>
-      <mesh geometry={petal}><meshPhysicalMaterial color={i % 2 ? '#d88c91' : '#f0b9a6'} emissive="#d8756a" emissiveIntensity={.26} roughness={.45} metalness={.12} side={THREE.DoubleSide}/></mesh>
+      <mesh geometry={petal}><meshPhysicalMaterial vertexColors map={petalSurface} bumpMap={petalSurface} bumpScale={.008} emissive="#d8756a" emissiveIntensity={.2} roughness={.5} metalness={.08} sheen={.5} sheenColor="#ffe6ca" side={THREE.DoubleSide}/></mesh>
       <Line points={Array.from({length:21},(_,j)=>{const t=j/20;return [0,-.32+t*.66,.104+.32*Math.sin(t*Math.PI*.65)] as [number,number,number];})} color="#f7d58e" lineWidth={1.1}/>
     </group>)}
     {[-.31,.4].map(y=><mesh key={y} position={[0,y,0]} rotation-x={Math.PI/2}><torusGeometry args={[y<0?.115:.125,.012,8,40]}/><meshStandardMaterial color="#e6bc66" metalness={.72} roughness={.28}/></mesh>)}

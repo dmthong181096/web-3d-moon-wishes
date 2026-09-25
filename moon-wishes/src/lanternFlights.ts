@@ -10,10 +10,12 @@ export function releaseLantern(lanterns: LanternFlight[], id: number, wish: stri
 export function flightPose(lantern: LanternFlight, now: number, reduced: boolean) {
   if (lantern.releasedAt === null) return { rise: 0, drift: 0, depth: 0, scale: 1, finished: false };
   const age = Math.max(0, now - lantern.releasedAt);
-  const rise = reduced ? 22 : age * .72 + age * age * .025;
+  // Gather lift smoothly from zero velocity at the hands.
+  const lift = age - .9 * (1 - Math.exp(-age / .9));
+  const rise = reduced ? 22 : lift * .72 + age * age * .025;
   return {
     rise,
-    drift: reduced ? (lantern.id % 5 - 2) * .5 : Math.sin(age * .3 + lantern.id) * Math.min(age * .09, 1.3),
+    drift: reduced ? (lantern.id % 5 - 2) * .5 : Math.sin(age * .3 + lantern.id) * Math.min(lift * .09, 1.3),
     depth: Math.min(rise * .3, 1.8),
     scale: Math.max(.18, 1 - Math.max(0, rise - 12) * .018),
     // Only retire after leaving the visible sky; starting another wish never removes a flight.

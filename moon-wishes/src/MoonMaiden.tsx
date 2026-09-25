@@ -6,9 +6,51 @@ import * as THREE from 'three';
 type Point = [number, number, number];
 const silk = '#e7d9bd', skin = '#e7bea0', hair = '#191b29';
 
-function Curve({ points, radius, color }: { points: Point[]; radius: number; color: string }) {
+function Curve({ points, radius, color, sleeve = false }: { points: Point[]; radius: number; color: string; sleeve?: boolean }) {
   const curve = useMemo(() => new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(...p))), [points]);
-  return <mesh castShadow><tubeGeometry args={[curve, 24, radius, 12, false]}/><meshStandardMaterial color={color} roughness={.65}/></mesh>;
+  const geometry = useMemo(() => {
+    const geo = new THREE.TubeGeometry(curve, 24, radius, 12, false);
+    if (sleeve) {
+      const positions = geo.attributes.position;
+      for (let j = 0; j <= 24; j++) {
+        const t = j / 24, center = curve.getPointAt(t);
+        const width = 1.5 - .65 * t + .12 * Math.sin(t * Math.PI * 2);
+        for (let i = 0; i <= 12; i++) {
+          const n = j * 13 + i;
+          const fold = width * (1 + .055 * Math.sin(i / 12 * Math.PI * 8));
+          positions.setXYZ(n, center.x + (positions.getX(n) - center.x) * fold, center.y + (positions.getY(n) - center.y) * fold, center.z + (positions.getZ(n) - center.z) * fold);
+        }
+      }
+      geo.computeVertexNormals();
+    }
+    return geo;
+  }, [curve, radius, sleeve]);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  return <mesh geometry={geometry} castShadow><meshPhysicalMaterial color={color} roughness={.65} sheen={sleeve ? .8 : 0} sheenColor="#fff1d4"/></mesh>;
+}
+
+function SilkSash({ reduced }: { reduced: boolean }) {
+  const group = useRef<THREE.Group>(null);
+  const geometry = useMemo(() => {
+    const path = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-.14, 1.31, -.055), new THREE.Vector3(-.33, 1.03, -.16),
+      new THREE.Vector3(-.46, .72, -.28), new THREE.Vector3(-.69, .6, -.47),
+      new THREE.Vector3(-.88, .67, -.65),
+    ]);
+    const positions:number[] = [], indices:number[] = [];
+    for (let i = 0; i <= 32; i++) {
+      const t = i / 32, p = path.getPoint(t);
+      const width = .026 + .055 * Math.sin(t * Math.PI);
+      for (const side of [-1, 1]) positions.push(p.x + side * width, p.y + side * width * Math.sin(t * 5), p.z + side * width * .35);
+      if (i < 32) { const n = i * 2; indices.push(n, n + 1, n + 3, n, n + 3, n + 2); }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setIndex(indices); geo.computeVertexNormals(); return geo;
+  }, []);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  useFrame(({clock}) => { if (group.current) group.current.rotation.y = reduced ? 0 : Math.sin(clock.elapsedTime * .7) * .035; });
+  return <group ref={group}><mesh geometry={geometry}><meshPhysicalMaterial color="#b7c8bd" roughness={.55} sheen={.85} sheenColor="#ffe6b2" side={THREE.DoubleSide}/></mesh></group>;
 }
 
 function SilkSkirt({ reduced }: { reduced: boolean }) {
@@ -35,6 +77,7 @@ export default function MoonMaiden({ reduced }: { reduced: boolean }) {
   const bodice = useMemo(() => [[.14, .94], [.125, 1.05], [.16, 1.23], [.195, 1.32], [.14, 1.39], [.075, 1.43]].map(([x, y]) => new THREE.Vector2(x, y)), []);
   return <group position={[-.45, .43, 2.1]} rotation-y={.55}>
     <SilkSkirt reduced={reduced}/>
+    <SilkSash reduced={reduced}/>
     <mesh scale={[1, 1, .66]} castShadow><latheGeometry args={[bodice, 48]}/><meshPhysicalMaterial color={silk} roughness={.62} sheen={.8} sheenColor="#ffebc9"/></mesh>
     <mesh position={[0, 1.43, 0]} rotation-z={-.09}><cylinderGeometry args={[.047, .06, .17, 24]}/><meshStandardMaterial color={skin}/></mesh>
     {/* A small, upward-turned profile, with sculpted hair instead of doll-like eyes. */}
@@ -51,8 +94,8 @@ export default function MoonMaiden({ reduced }: { reduced: boolean }) {
     </group>
     {/* Hair and ribbon follow the same quiet breeze as the skirt. */}
     {[-1, 0, 1].map((i) => <Curve key={i} points={[[i * .053, 1.58, -.075], [i * .059, 1.4, -.12], [i * .065 - .045, 1.16, -.16], [i * .052 - .12, .99, -.12]]} radius={.044} color={hair}/>)}
-    <Curve points={[[-.17, 1.29, .015], [-.25, 1.55, .06], [-.14, 1.72, .15], [-.05, 1.82, .2]]} radius={.052} color={silk}/>
-    <Curve points={[[.17, 1.3, 0], [.35, 1.53, .07], [.31, 1.69, .17], [.24, 1.82, .24]]} radius={.052} color={silk}/>
+    <Curve points={[[-.17, 1.29, .015], [-.25, 1.55, .06], [-.14, 1.72, .15], [-.05, 1.82, .2]]} radius={.052} color={silk} sleeve/>
+    <Curve points={[[.17, 1.3, 0], [.35, 1.53, .07], [.31, 1.69, .17], [.24, 1.82, .24]]} radius={.052} color={silk} sleeve/>
     {[[-.05, 1.86, .2], [.24, 1.86, .24]].map((p, i) => <mesh key={i} position={p as Point} rotation-z={i ? .25 : -.25} scale={[.033, .055, .023]}><sphereGeometry args={[1, 20, 16]}/><meshStandardMaterial color={skin} roughness={.8}/></mesh>)}
     <Line points={[[.04, 1.4, .09], [.07, 1.28, .117], [.015, 1.12, .094], [.02, .93, .112], [.095, .56, .17], [.2, .16, .205]]} color="#b89a5e" lineWidth={.8}/>
     {[0, 1, 2].map(i => <mesh key={i} position={[.074 - i * .014, 1.32 - i * .079, .114]}><sphereGeometry args={[.012, 10, 8]}/><meshStandardMaterial color="#eacb85" metalness={.5}/></mesh>)}

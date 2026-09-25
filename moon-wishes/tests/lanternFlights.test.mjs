@@ -36,3 +36,18 @@ test('reduced motion keeps airborne lanterns still without returning them to the
   assert.deepEqual(early, later);
   assert.equal(later.finished, false);
 });
+
+test('release starts gently at the hands and rises continuously', () => {
+  const lantern = { id: 3, releasedAt: 100, wish: 'Bình an' };
+  const start = flightPose(lantern, 100, false);
+  assert.equal(start.rise, 0);
+  assert.equal(start.drift, 0);
+  assert.ok(flightPose(lantern, 100.01, false).rise / .01 < .01);
+  let previous = 0;
+  for (let age = .1; age <= 50; age += .1) {
+    const pose = flightPose(lantern, 100 + age, false);
+    assert.ok(Number.isFinite(pose.rise));
+    assert.ok(pose.rise > previous);
+    previous = pose.rise;
+  }
+});

@@ -110,7 +110,7 @@ export default function WishExperience() {
   };
   return <main className="wish-page">
     <div className="wish-canvas" aria-label="Cây đa trên cung trăng. Kéo để xoay, chạm đèn lồng để mở lời chúc, chạm đèn cô gái đang nâng để viết điều ước.">
-      <WishWorld onRead={setBlessing} onWrite={openWish} lanterns={lanterns} followId={followId} homeRevision={homeRevision} onRetire={retireLantern} onReady={onReady} entry={sceneEntry} reduced={reduced}/>
+      <WishWorld onRead={setBlessing} onWrite={openWish} lanterns={lanterns} followId={followId} homeRevision={homeRevision} onRetire={retireLantern} onReady={onReady} entry={sceneEntry} reduced={reduced} showerTrigger={releasedCount}/>
     </div>
     <dialog ref={intro} className={`moon-intro${sceneReady && fontsReady ? ' is-ready' : ''}${introStage === 'leaving' ? ' is-leaving' : ''}`} aria-labelledby="intro-title" onCancel={e => { e.preventDefault(); leaveIntro(); }}>
       <div className="intro-content">

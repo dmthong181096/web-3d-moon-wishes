@@ -12,8 +12,8 @@ function useRabbitSculpture() {
   return useMemo(() => {
     // A smooth union joins head, chest and haunches into one continuous silhouette.
     const shapes = [
-      {p:[0,.27,-.12],r:[.285,.285,.37]}, {p:[0,.46,.16],r:[.215,.235,.255]},
-      {p:[0,.55,.26],r:[.223,.212,.218]}, {p:[0,.465,.407],r:[.12,.092,.098]},
+      {p:[0,.28,-.12],r:[.31,.295,.355]}, {p:[0,.46,.16],r:[.225,.235,.255]},
+      {p:[0,.565,.27],r:[.25,.23,.235]}, {p:[0,.485,.43],r:[.137,.098,.105]},
       {p:[-.18,.165,-.22],r:[.16,.17,.245]}, {p:[.18,.165,-.22],r:[.16,.17,.245]},
     ];
     const resolution=52,material=new THREE.MeshStandardMaterial(),field=new MarchingCubes(resolution,material,false,false,16000);
@@ -34,27 +34,29 @@ function Ear({side}:{side:number}) {
     const positions:number[]=[],indices:number[]=[];const rows=24,sides=20;
     for(let j=0;j<=rows;j++)for(let i=0;i<=sides;i++){
       const t=j/rows,a=i/sides*Math.PI*2,w=.073*Math.pow(Math.sin(Math.PI*t),.75)+.015*(1-t);
-      positions.push(Math.cos(a)*w+side*.025*t*t,t*.48,Math.sin(a)*w*.48-.075*t*t);
+      const fold=side===1?Math.max(0,(t-.5)*2)**2:0;
+      positions.push(Math.cos(a)*w+side*.05*t*t,t*(side===1?.43:.49)-fold*.065,Math.sin(a)*w*.48-.045*t*t+fold*.17);
       if(j<rows&&i<sides){const n=j*(sides+1)+i;indices.push(n,n+sides+2,n+1,n,n+sides+1,n+sides+2);}
     }
     const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geo.setIndex(indices);geo.computeVertexNormals();return geo;
   },[side]);
-  return <group position={[side*.095,.693,.19]} rotation={[side===1?-.16:.1,0,side*-.16]}>
+  return <group position={[side*.105,.74,.2]} rotation={[side===1?-.12:.08,0,side*-.22]}>
     <mesh geometry={geometry} castShadow><meshStandardMaterial color="#f5eddf" roughness={.87} side={THREE.DoubleSide}/></mesh>
-    <mesh geometry={geometry} position={[0,.044,.032]} scale={[.54,.79,.2]}><meshStandardMaterial color="#ddb5ad" roughness={.95} side={THREE.DoubleSide}/></mesh>
+    <mesh geometry={geometry} position={[0,.036,.032]} scale={[.59,.8,.52]}><meshStandardMaterial color="#e5afa9" roughness={.95} side={THREE.DoubleSide}/></mesh>
   </group>;
 }
 export default function MoonRabbit({reduced}:{reduced:boolean}) {
-  const geometry=useRabbitSculpture(),body=useRef<THREE.Group>(null),ears=useRef<THREE.Group>(null),eyes=useRef<THREE.Group>(null);
+  const geometry=useRabbitSculpture(),body=useRef<THREE.Group>(null),ears=useRef<THREE.Group>(null),eyes=useRef<THREE.Group>(null),nose=useRef<THREE.Group>(null);
   useFrame(({clock})=>{const t=clock.elapsedTime;
     if(body.current)body.current.scale.y=reduced?1:1+Math.sin(t*1.5)*.006;
-    if(ears.current)ears.current.rotation.x=reduced?0:Math.sin(t*.7)*.018;
+    if(ears.current){const twitch=Math.max(0,Math.sin(t*.65))**12;ears.current.rotation.x=reduced?0:Math.sin(t*.7)*.018+twitch*.045;}
+    if(nose.current)nose.current.scale.setScalar(reduced?1:1+Math.sin(t*5.5)*.055);
     if(eyes.current){const phase=t%7;eyes.current.scale.y=reduced||phase<6.72?1:.12+.88*Math.abs((phase-6.86)/.14);}
   });
-  return <group position={[1.16,.445,2.13]} rotation-y={-.62} scale={1.23}>
+  return <group position={[1.16,.445,2.13]} rotation-y={-.36} scale={1.23}>
     <group ref={body}>
-      <mesh geometry={geometry} castShadow receiveShadow><meshStandardMaterial color="#eee6d8" roughness={.9} emissive="#d4bd99" emissiveIntensity={.035}/></mesh>
-      <SoftShape position={[.245,.185,-.41]} scale={[.115,.112,.12]}/>
+      <mesh geometry={geometry} castShadow receiveShadow><meshPhysicalMaterial color="#f6eee3" roughness={.93} sheen={.45} sheenColor="#fff5ec" emissive="#d4bd99" emissiveIntensity={.035}/></mesh>
+      <SoftShape position={[.26,.2,-.41]} scale={[.13,.125,.13]}/>
       {[-1,1].map(side=><group key={side}>
         <SoftShape position={[side*.15,.043,.3]} scale={[.091,.046,.176]}/>
         <SoftShape position={[side*.251,.055,-.11]} scale={[.096,.065,.21]}/>
@@ -62,15 +64,19 @@ export default function MoonRabbit({reduced}:{reduced:boolean}) {
         <Line points={[[side*.15+.018,.077,.401],[side*.15+.02,.083,.442]]} color="#c9bcab" lineWidth={.45}/>
       </group>)}
       <group ref={ears}><Ear side={-1}/><Ear side={1}/></group>
-      <group ref={eyes} position={[0,.557,.459]}>
-        {[-1,1].map(side=><group key={side} position={[side*.131,0,-.006]} rotation-y={side*.42} rotation-z={side*-.13}>
-          <mesh scale={[.027,.035,.013]}><sphereGeometry args={[1,24,20]}/><meshStandardMaterial color="#352529" roughness={.15}/></mesh>
-          <mesh position={[-.006,.009,.012]}><sphereGeometry args={[.005,12,8]}/><meshBasicMaterial color="#fff4d9"/></mesh>
+      <group ref={eyes} position={[0,.584,.489]}>
+        {[-1,1].map(side=><group key={side} position={[side*.144,0,0]} rotation-y={side*.42} rotation-z={side*-.1}>
+          <mesh scale={[.035,.045,.019]}><sphereGeometry args={[1,24,20]}/><meshStandardMaterial color="#2b2028" roughness={.12}/></mesh>
+          <mesh position={[-.009,.014,.017]}><sphereGeometry args={[.009,12,8]}/><meshBasicMaterial color="#fff8ed"/></mesh>
+          <mesh position={[.009,-.011,.018]}><sphereGeometry args={[.004,8,6]}/><meshBasicMaterial color="#e6c9b8"/></mesh>
         </group>)}
       </group>
-      <SoftShape position={[0,.479,.521]} scale={[.021,.014,.012]} color="#bf8d87"/>
-      <Line points={[[0,.47,.529],[0,.452,.528],[-.014,.446,.52]]} color="#ac9992" lineWidth={.5}/>
-      <Line points={[[0,.452,.528],[.014,.446,.52]]} color="#ac9992" lineWidth={.5}/>
+      {[-1,1].map(side=><group key={'cheek'+side} position={[side*.166,.515,.472]} rotation-y={side*.55}>
+        <SoftShape position={[0,0,0]} scale={[.045,.025,.012]} color="#edbdb6"/>
+      </group>)}
+      <group ref={nose} position={[0,.493,.544]}><SoftShape position={[0,0,0]} scale={[.024,.017,.013]} color="#cb9297"/></group>
+      <Line points={[[0,.481,.55],[0,.463,.546],[-.015,.457,.54],[-.025,.466,.535]]} color="#a57e7d" lineWidth={.7}/>
+      <Line points={[[0,.463,.546],[.015,.457,.54],[.025,.466,.535]]} color="#a57e7d" lineWidth={.7}/>
       {[-1,1].map(side=><group key={side}>{[-1,1].map(i=><Line key={i} points={[[side*.073,.473+i*.013,.505],[side*.165,.485+i*.03,.52],[side*.223,.49+i*.037,.51]]} color="#d8cbbb" lineWidth={.45} transparent opacity={.7}/>)}</group>)}
     </group>
   </group>;

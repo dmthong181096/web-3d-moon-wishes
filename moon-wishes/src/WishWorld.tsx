@@ -10,10 +10,12 @@ import MoonTeaTable from './MoonTeaTable';
 import { flightPose } from './lanternFlights';
 import type { LanternFlight } from './lanternFlights';
 import WishLantern, { WISH_LANTERN_HOME } from './WishLantern';
+import { barkRelief, leafSurface, lunarRelief, lanternPaper } from './moonMaterials';
+import { TwinklingStars, LanternRelease } from './MoonMagic';
 
 type Point = [number, number, number];
 type Blessing = { title: string; message: string };
-type Props = { onRead: (wish: Blessing) => void; onWrite: () => void; lanterns: LanternFlight[]; followId: number | null; homeRevision: number; onRetire: (id: number) => void; onReady: () => void; entry: number; reduced: boolean };
+type Props = { onRead: (wish: Blessing) => void; onWrite: () => void; lanterns: LanternFlight[]; followId: number | null; homeRevision: number; onRetire: (id: number) => void; onReady: () => void; entry: number; reduced: boolean; showerTrigger?: number };
 function random(seed: number) { let n = seed; return () => { n = (n * 1664525 + 1013904223) >>> 0; return n / 4294967296; }; }
 const ignoreRaycast = () => {};
 const glowMap = (() => {
@@ -33,22 +35,30 @@ function Wood({ points, radius=.2, end=.025, color='#645044' }: {points:Point[];
     const curve=new THREE.CatmullRomCurve3(points.map(p=>new THREE.Vector3(...p)));
     const steps=32, sides=12, geometry=new THREE.TubeGeometry(curve,steps,1,sides,false);
     const vertices=geometry.attributes.position;
-    for(let i=0;i<=steps;i++) { const t=i/steps, center=curve.getPointAt(t); const radiusAt=radius*Math.pow(1-t,.85)+end*t;
+    for(let i=0;i<=steps;i++) { const t=i/steps, center=curve.getPointAt(t);
+      const buttress=radius>.25?1+.3*Math.exp(-t*11):1;
+      const radiusAt=(radius*Math.pow(1-t,.85)+end*t)*buttress;
       for(let j=0;j<=sides;j++) {const index=i*(sides+1)+j, angle=j/sides*Math.PI*2;const r=radiusAt*(1+.085*Math.sin(angle*5+t*14));
         vertices.setXYZ(index,center.x+(vertices.getX(index)-center.x)*r,center.y+(vertices.getY(index)-center.y)*r,center.z+(vertices.getZ(index)-center.z)*r);
       }
     }
+    const uv=geometry.attributes.uv;
+    for(let i=0;i<uv.count;i++)uv.setX(i,uv.getX(i)*Math.max(1,curve.getLength()*.65));
     geometry.computeVertexNormals();return geometry;
   },[points,radius,end]);
   useEffect(()=>()=>geometry.dispose(),[geometry]);
-  return <mesh geometry={geometry} castShadow receiveShadow><meshStandardMaterial color={color} roughness={.95}/></mesh>;
+  return <mesh geometry={geometry} castShadow receiveShadow><meshStandardMaterial color={color} map={barkRelief} bumpMap={barkRelief} bumpScale={Math.min(.065,radius*.19)} roughness={.91}/></mesh>;
 }
 const crowns: [number,number,number,number][]=[[-2.85,4.55,.05,.84],[-2.35,5.12,-.55,1.02],[-1.55,5.6,-.3,1.05],[-.5,5.98,-.3,1.03],[.58,5.94,-.6,.97],[1.57,5.53,-.36,1],[2.5,5.05,-.25,.96],[2.95,4.45,.3,.72],[-2.12,4.52,1.02,.8],[-1.15,5.06,1.22,.91],[.08,5.26,1.17,.98],[1.32,4.96,1.15,.87],[2.08,4.36,1.1,.68],[-1.55,4.94,-1.3,.9],[-.2,5.37,-1.45,.94],[1.38,5.03,-1.4,.9]];
 function Foliage() {
   const leaves=useRef<THREE.InstancedMesh>(null);
   const geometry=useMemo(()=>{
     const geo=new THREE.BufferGeometry();
-    geo.setAttribute('position',new THREE.Float32BufferAttribute([-1,0,0,-.65,.04,.31,0,.06,.47,.65,.035,.27,1,0,0,.65,.035,-.27,0,.06,-.47,-.65,.04,-.31,0,.18,0],3));
+    geo.setAttribute('position',new THREE.Float32BufferAttribute([-.9,0,0,-.65,.04,.35,0,.07,.47,.65,.025,.26,1.32,-.065,0,.65,.025,-.26,0,.07,-.47,-.65,.04,-.35,0,.16,0],3));
+    const uv:number[]=[];
+    const pos=geo.attributes.position;
+    for(let i=0;i<pos.count;i++)uv.push((pos.getX(i)+.9)/2.22,pos.getZ(i)+.5);
+    geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
     const indices:number[]=[];for(let i=0;i<8;i++)indices.push(8,i,(i+1)%8);
     geo.setIndex(indices);geo.computeVertexNormals();return geo;
   },[]);
@@ -56,17 +66,20 @@ function Foliage() {
   useLayoutEffect(()=>{
     if(!leaves.current)return;
     const rng=random(2711),object=new THREE.Object3D(),color=new THREE.Color();
-    const palette=['#456b4d','#527b55','#789663','#386750','#8fa36b','#397566'];
+    const palette=['#537256','#69845a','#9baf76','#426b59','#b6b67b','#638e77'];
     for(let i=0;i<9000;i++){
       const c=crowns[i%crowns.length],a=rng()*Math.PI*2,v=rng()*2-1,r=Math.cbrt(rng())*c[3];
       object.position.set(c[0]+Math.cos(a)*Math.sqrt(1-v*v)*r,c[1]+v*r*.65,c[2]+Math.sin(a)*Math.sqrt(1-v*v)*r*.85);
       object.rotation.set(rng()*1.8-.9,rng()*Math.PI*2,rng()*1.4-.7);
       const size=.08+rng()*.08;object.scale.set(size,size,size);object.updateMatrix();
-      leaves.current.setMatrixAt(i,object.matrix);color.set(palette[Math.floor(rng()*palette.length)]);leaves.current.setColorAt(i,color);
+      leaves.current.setMatrixAt(i,object.matrix);color.set(palette[Math.floor(rng()*palette.length)]);
+      // Bake canopy depth into instance colours instead of shadowing 9,000 leaves.
+      color.multiplyScalar(.64+.25*(r/c[3])+.17*Math.max(0,v));
+      leaves.current.setColorAt(i,color);
     }
     leaves.current.instanceMatrix.needsUpdate=true;leaves.current.computeBoundingSphere();
   },[]);
-  return <instancedMesh ref={leaves} args={[geometry,undefined,9000]}><meshStandardMaterial roughness={.79} side={THREE.DoubleSide}/></instancedMesh>;
+  return <instancedMesh ref={leaves} args={[geometry,undefined,9000]}><meshStandardMaterial map={leafSurface} roughness={.72} side={THREE.DoubleSide}/></instancedMesh>;
 }
 function Banyan() {
   return <group position={[0,.48,-.45]} onClick={e=>e.stopPropagation()}>
@@ -81,32 +94,36 @@ function Banyan() {
 }
 function MoonIsland() {
   const geometry=useMemo(()=>{
-    const vertices:number[]=[],colors:number[]=[],indices:number[]=[],segments=96,rings=42,color=new THREE.Color();
+    const vertices:number[]=[],colors:number[]=[],uv:number[]=[],indices:number[]=[],segments=96,rings=42,color=new THREE.Color();
     const craters=[[-2.9,1.4,.52],[2.8,.9,.62],[-1.9,-2.6,.6],[2,-2.5,.43],[.8,3.05,.41]];
     for(let j=0;j<=rings;j++) for(let i=0;i<=segments;i++) {
       const a=i/segments*Math.PI*2,top=j<=24,u=top?j/24:(j-24)/(rings-24);
-      const r=(top?4.25*u:4.25*Math.pow(1-u,.68))*(1+.026*Math.sin(a*5)+.035*Math.sin(a*9+1));
+      const cliff=top?0:Math.sin(Math.PI*u)*(.11*Math.sin(a*7+u*3)+.06*Math.cos(a*13-u*4));
+      const r=(top?4.25*u:4.25*Math.pow(1-u,.68))*(1+.026*Math.sin(a*5)+.035*Math.sin(a*9+1)+cliff);
       const x=Math.cos(a)*r,z=Math.sin(a)*r,noise=Math.sin(x*3.8+z*2.3)*Math.cos(z*4.1-x*1.6);
       let y=top?.3+.2*(1-u*u)+noise*.055:-.04-2.3*u+noise*.16*Math.sin(u*Math.PI);
       if(top) for(const [cx,cz,cr] of craters){const d=Math.hypot(x-cx,z-cz)/cr;y-=.19*Math.exp(-d*d*3);y+=.07*Math.exp(-Math.pow(d-1,2)*22);}
       vertices.push(x,y,z);
+      uv.push(top?x*.65:a/Math.PI*3,top?z*.65:u*3);
       if(top){color.set('#929c9e').lerp(new THREE.Color('#53675e'),Math.max(0,1-r/2.6)*.7);color.multiplyScalar(.89+noise*.045+u*.09);}
-      else color.set('#7c8392').lerp(new THREE.Color('#263245'),u*.85).multiplyScalar(1+noise*.1);
+      else {
+        const strata=.94+.06*Math.sin(u*52+Math.sin(a*5)*1.2);
+        color.set('#87969c').lerp(new THREE.Color('#303b53'),u*.85).multiplyScalar(strata+noise*.1);
+      }
       colors.push(color.r,color.g,color.b);
       if(j<rings && i<segments){const n=j*(segments+1)+i;indices.push(n,n+segments+2,n+segments+1,n,n+1,n+segments+2);}
     }
-    const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geo.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));geo.setIndex(indices);geo.computeVertexNormals();return geo;
+    const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geo.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));geo.setIndex(indices);geo.computeVertexNormals();return geo;
   },[]);
   useEffect(()=>()=>geometry.dispose(),[geometry]);
-  return <group><mesh geometry={geometry} receiveShadow castShadow><meshStandardMaterial vertexColors roughness={.96}/></mesh>
+  return <group><mesh geometry={geometry} receiveShadow castShadow><meshStandardMaterial vertexColors bumpMap={lunarRelief} bumpScale={.085} roughness={.96}/></mesh>
     {Array.from({length:14},(_,i)=>{const a=i*2.4,r=2.6+(i%4)*.27,s=.09+(i%5)*.045;return <mesh key={i} position={[Math.cos(a)*r,.36,Math.sin(a)*r]} scale={[s,s*.6,s*.8]} rotation={[i,i*.4,0]}><icosahedronGeometry args={[1,1]}/><meshStandardMaterial color={i%3?'#7f898c':'#a3a69e'} roughness={1}/></mesh>})}
   </group>;
 }
 function PaperLantern({color='#e3a360',scale=1}:{color?:string;scale?:number}) {
   const profile=useMemo(()=>Array.from({length:33},(_,i)=>{const t=i/32;return new THREE.Vector2(.105+.2*Math.pow(Math.sin(t*Math.PI),.68)+.003*Math.sin(t*24*Math.PI),-.36+t*.72)}),[]);
   return <group scale={scale}>
-    <mesh><latheGeometry args={[profile,24]}/><meshStandardMaterial color={color} emissive={color} emissiveIntensity={.73} roughness={.56} side={THREE.DoubleSide}/></mesh>
-    {Array.from({length:4},(_,i)=>{const a=i/4*Math.PI*2;return <Line key={i} points={profile.map(p=>[p.x*Math.cos(a),p.y,p.x*Math.sin(a)] as Point)} color="#9f683b" lineWidth={.65} transparent opacity={.6}/>})}
+    <mesh><latheGeometry args={[profile,24]}/><meshStandardMaterial map={lanternPaper} bumpMap={lanternPaper} bumpScale={.009} color={color} emissiveMap={lanternPaper} emissive={color} emissiveIntensity={.86} roughness={.72} side={THREE.DoubleSide}/></mesh>
     {[-.367,.367].map(y=><mesh key={y} position={[0,y,0]}><cylinderGeometry args={[.115,.115,.037,16]}/><meshStandardMaterial color="#be934f" metalness={.65} roughness={.4}/></mesh>)}
     <mesh position={[0,.437,0]}><torusGeometry args={[.072,.009,8,16,Math.PI]}/><meshStandardMaterial color="#b9975f"/></mesh>
     <group>
@@ -135,7 +152,9 @@ const MovingWishLantern = memo(function MovingWishLantern({lantern,onWrite,onRea
     if(!group.current)return;
     const now=performance.now()/1000,pose=flightPose(lantern,now,reduced);
     group.current.position.set(WISH_LANTERN_HOME[0]+pose.drift,WISH_LANTERN_HOME[1]+pose.rise,WISH_LANTERN_HOME[2]+pose.depth);
-    group.current.rotation.set(0,reduced?0:Math.sin(now*.65+lantern.id)*.045,reduced?0:Math.sin(now*.9+lantern.id)*.018);
+    const age=lantern.releasedAt===null?0:Math.max(0,now-lantern.releasedAt);
+    const lift=reduced?0:1-Math.exp(-age/1.5);
+    group.current.rotation.set(lift*Math.sin(age*.8)*.045,reduced?0:Math.sin(now*.65+lantern.id)*.045+lift*Math.sin(age*.4)*.22,reduced?0:Math.sin(now*.9+lantern.id)*.018+lift*Math.sin(age*.9)*.06);
     group.current.scale.setScalar(pose.scale);
     if(pose.finished&&!retired.current){retired.current=true;onRetire(lantern.id);}
   });
@@ -354,32 +373,19 @@ function MoonClouds({ reduced }: { reduced: boolean }) {
     });
   }, []);
 
-  useFrame(({ clock }, delta) => {
+  useFrame((_, delta) => {
     if (!group.current || reduced) return;
     group.current.rotation.y += delta * 0.02;
   });
 
   return <group ref={group}>
-    {/* Floating base celestial clouds */}
-    {puffs.map((p, i) => <group key={i} position={[p.x, p.y, p.z]} scale={p.scale}>
-      <mesh receiveShadow={false}>
-        <sphereGeometry args={[1, 16, 12]} />
-        <meshStandardMaterial color="#d4e8f5" roughness={0.96} transparent opacity={0.38} depthWrite={false} emissive="#4d6f88" emissiveIntensity={0.2} />
-      </mesh>
-      <mesh position={[0.42, 0.12, -0.2]} scale={0.76}>
-        <sphereGeometry args={[1, 12, 10]} />
-        <meshStandardMaterial color="#e8f3fc" roughness={0.96} transparent opacity={0.32} depthWrite={false} emissive="#4d6f88" emissiveIntensity={0.18} />
-      </mesh>
-      <mesh position={[-0.38, -0.08, 0.25]} scale={0.7}>
-        <sphereGeometry args={[1, 12, 10]} />
-        <meshStandardMaterial color="#c2ddf0" roughness={0.96} transparent opacity={0.34} depthWrite={false} emissive="#4d6f88" emissiveIntensity={0.19} />
-      </mesh>
-    </group>)}
-    {/* Soft ground mists around island perimeter */}
-    {mists.map((m, i) => <mesh key={'mist' + i} position={[m.x, m.y, m.z]} scale={[m.scaleX, 0.06, m.scaleZ]}>
-      <sphereGeometry args={[0.9, 16, 8]} />
-      <meshStandardMaterial color="#eaf4fb" roughness={1} transparent opacity={0.22} depthWrite={false} emissive="#628ea8" emissiveIntensity={0.18} />
-    </mesh>)}
+    {/* Feathered mist avoids hard sphere intersections and uses 44 fewer draws. */}
+    {puffs.map((p, i) => <sprite key={i} position={[p.x,p.y,p.z]} scale={[p.scale*3.8,p.scale*1.65,1]} raycast={ignoreRaycast}>
+      <spriteMaterial map={glowMap} color="#adc8dc" transparent opacity={.28} depthWrite={false}/>
+    </sprite>)}
+    {mists.map((m, i) => <sprite key={'mist'+i} position={[m.x,m.y,m.z]} scale={[m.scaleX*2,.32,1]} raycast={ignoreRaycast}>
+      <spriteMaterial map={glowMap} color="#c5d8dc" transparent opacity={.2} depthWrite={false}/>
+    </sprite>)}
   </group>;
 }
 function FallingLeaves({ reduced }: { reduced: boolean }) {
@@ -424,14 +430,91 @@ function FallingLeaves({ reduced }: { reduced: boolean }) {
     <meshStandardMaterial color="#fcd462" emissive="#e5a93b" emissiveIntensity={0.35} roughness={0.65} side={THREE.DoubleSide} />
   </instancedMesh>;
 }
-function ShootingStars({ reduced }: { reduced: boolean }) {
+type MeteorDef = {
+  delay: number;
+  duration: number;
+  start: Point;
+  end: Point;
+  color: string;
+  glowColor: string;
+  tailLen: number;
+  width: number;
+};
+
+const AUSPICIOUS_SHOWER: MeteorDef[] = [
+  // --- Wave 1: Khởi Nguyện (Pioneer wave as lantern takes flight: 0.1s - 2.2s) ---
+  // 1. Khởi Tâm Tinh - Vàng kim rực rỡ mở màn
+  { delay: 0.15, duration: 0.9, start: [18, 20, -19], end: [-10, 8, -17], color: '#ffffff', glowColor: '#ffd32a', tailLen: 5.0, width: 3.4 },
+  // 2. Thanh Vân Tinh - Ngọc bích thanh khiết
+  { delay: 0.45, duration: 0.8, start: [13, 23, -23], end: [-14, 13, -21], color: '#e0f2fe', glowColor: '#74b9ff', tailLen: 4.4, width: 2.8 },
+  // 3. Nghinh Nguyệt Tinh - Quét chéo từ trái sang phải
+  { delay: 0.85, duration: 0.85, start: [-16, 21, -22], end: [9, 10, -20], color: '#f1f2f6', glowColor: '#00d2d3', tailLen: 4.5, width: 2.8 },
+  // 4. Phúc Lộc Tinh - Ánh hoàng kim ấm áp
+  { delay: 1.25, duration: 0.95, start: [16, 19, -18], end: [-8, 7, -16], color: '#ffeaa7', glowColor: '#ffa801', tailLen: 5.2, width: 3.6 },
+  // 5. Cát Tường Tinh - Hồng ngọc may mắn
+  { delay: 1.65, duration: 0.85, start: [20, 19, -24], end: [-5, 8, -22], color: '#ffbe76', glowColor: '#ff7675', tailLen: 4.6, width: 3.0 },
+
+  // --- Wave 2: Thăng Hoa & Đỉnh Triều (Zenith wave as lantern ascends: 2.2s - 5.2s) ---
+  // 6. ĐẠI CÁT ĐẠI LỢI (The Great Zenith Star) - Sao băng hoàng kim đại cực đại
+  { delay: 2.2, duration: 1.25, start: [19, 23, -20], end: [-13, 6, -18], color: '#ffffff', glowColor: '#ffd700', tailLen: 7.2, width: 5.0 },
+  // 7. Song Tinh Tảo Thủy (Cặp đôi may mắn A)
+  { delay: 2.65, duration: 0.85, start: [12, 22, -22], end: [-15, 11, -20], color: '#74b9ff', glowColor: '#0984e3', tailLen: 4.4, width: 2.9 },
+  // 8. Song Tinh Tảo Thủy (Cặp đôi may mắn B)
+  { delay: 2.8, duration: 0.9, start: [15, 20, -19], end: [-11, 8, -17], color: '#feca57', glowColor: '#ff9f43', tailLen: 4.8, width: 3.2 },
+  // 9. Thái Bình Tinh - Tím huyền ảo phương đông
+  { delay: 3.3, duration: 0.95, start: [-14, 22, -23], end: [12, 10, -21], color: '#f8efba', glowColor: '#a29bfe', tailLen: 4.6, width: 3.0 },
+  // 10. Quang Minh Tinh - Trắng bạch kim cao vút
+  { delay: 3.85, duration: 1.0, start: [17, 24, -22], end: [-12, 9, -19], color: '#ffffff', glowColor: '#55efc4', tailLen: 5.5, width: 3.8 },
+  // 11. Hỷ Lạc Tinh - Cam vàng rực sáng
+  { delay: 4.4, duration: 0.9, start: [14, 18, -17], end: [-9, 7, -16], color: '#ffeaa7', glowColor: '#fdcb6e', tailLen: 4.8, width: 3.2 },
+
+  // --- Wave 3: Viên Mãn & Chúc Phúc (Grand finale wave as lantern approaches the moon: 5.2s - 8.5s) ---
+  // 12. Diệu Nguyệt Tinh - Bay quét ngang vầng trăng
+  { delay: 5.1, duration: 1.1, start: [-17, 24, -23], end: [14, 11, -20], color: '#ffffff', glowColor: '#81ecec', tailLen: 6.0, width: 4.0 },
+  // 13. Vạn Sự Như Ý - Cực đại vàng lộng lẫy
+  { delay: 5.7, duration: 1.25, start: [21, 25, -21], end: [-11, 7, -18], color: '#fff9e6', glowColor: '#f1c40f', tailLen: 7.0, width: 4.8 },
+  // 14. Tam Tinh Tụ Hội A
+  { delay: 6.3, duration: 0.85, start: [10, 21, -20], end: [-14, 10, -18], color: '#fab1a0', glowColor: '#e17055', tailLen: 4.5, width: 2.8 },
+  // 15. Tam Tinh Tụ Hội B
+  { delay: 6.5, duration: 0.9, start: [15, 23, -22], end: [-8, 12, -20], color: '#a8ff78', glowColor: '#00b894', tailLen: 4.6, width: 3.0 },
+  // 16. Đại Viên Mãn - Tia sáng kết thúc muôn vàn phước lành
+  { delay: 7.1, duration: 1.3, start: [18, 26, -21], end: [-10, 8, -17], color: '#ffffff', glowColor: '#fffa65', tailLen: 7.5, width: 5.2 },
+];
+
+const SHOWER_METEORS_DATA = AUSPICIOUS_SHOWER.map(m => {
+  const dx = m.end[0] - m.start[0];
+  const dy = m.end[1] - m.start[1];
+  const dz = m.end[2] - m.start[2];
+  const len = Math.hypot(dx, dy, dz) || 1;
+  const tailX = -(dx / len) * m.tailLen;
+  const tailY = -(dy / len) * m.tailLen;
+  const tailZ = -(dz / len) * m.tailLen;
+  return {
+    ...m,
+    tail: [tailX, tailY, tailZ] as Point,
+  };
+});
+
+function ShootingStars({ reduced, showerTrigger = 0 }: { reduced: boolean; showerTrigger?: number }) {
   const s0 = useRef<THREE.Group>(null);
   const s1 = useRef<THREE.Group>(null);
+  const showerRefs = useRef<(THREE.Group | null)[]>([]);
+  const lastTrigger = useRef(showerTrigger);
+  const showerStartTime = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (showerTrigger > 0 && showerTrigger !== lastTrigger.current) {
+      lastTrigger.current = showerTrigger;
+      showerStartTime.current = performance.now() / 1000;
+    }
+  }, [showerTrigger]);
 
   useFrame(({ clock }) => {
     if (reduced) return;
+    const now = performance.now() / 1000;
     const t = clock.elapsedTime;
-    // Meteor 0: cycle 6.4s, visible for 0.7s
+
+    // 1. Ambient occasional meteors
     const m0 = t % 6.4;
     if (s0.current) {
       if (m0 < 0.7) {
@@ -447,7 +530,7 @@ function ShootingStars({ reduced }: { reduced: boolean }) {
         s0.current.visible = false;
       }
     }
-    // Meteor 1: cycle 9.6s, offset 4.2s, visible for 0.8s
+
     const m1 = (t + 4.2) % 9.6;
     if (s1.current) {
       if (m1 < 0.8) {
@@ -463,10 +546,40 @@ function ShootingStars({ reduced }: { reduced: boolean }) {
         s1.current.visible = false;
       }
     }
+
+    // 2. Auspicious Meteor Shower (Dàn sao băng chúc phúc khi thả đèn)
+    if (showerStartTime.current !== null) {
+      const elapsedShower = now - showerStartTime.current;
+      SHOWER_METEORS_DATA.forEach((m, i) => {
+        const group = showerRefs.current[i];
+        if (!group) return;
+        const meteorElapsed = elapsedShower - m.delay;
+        if (meteorElapsed >= 0 && meteorElapsed < m.duration) {
+          const p = meteorElapsed / m.duration;
+          const x = m.start[0] + (m.end[0] - m.start[0]) * p;
+          const y = m.start[1] + (m.end[1] - m.start[1]) * p;
+          const z = m.start[2] + (m.end[2] - m.start[2]) * p;
+          const fade = Math.sin(p * Math.PI);
+          group.visible = true;
+          group.position.set(x, y, z);
+          group.scale.setScalar(fade * 1.35);
+        } else {
+          group.visible = false;
+        }
+      });
+
+      if (elapsedShower > 8.8) {
+        showerStartTime.current = null;
+        showerRefs.current.forEach(g => {
+          if (g) g.visible = false;
+        });
+      }
+    }
   });
 
   if (reduced) return null;
   return <>
+    {/* Ambient periodic meteors */}
     <group ref={s0} visible={false}>
       <Line points={[[0, 0, 0], [2.4, 1.05, 0.35]]} color="#ffffff" lineWidth={2.4} transparent opacity={0.85} blending={THREE.AdditiveBlending} />
       <mesh><sphereGeometry args={[0.075, 8, 8]} /><meshBasicMaterial color="#ffffff" toneMapped={false} /></mesh>
@@ -477,6 +590,18 @@ function ShootingStars({ reduced }: { reduced: boolean }) {
       <mesh><sphereGeometry args={[0.065, 8, 8]} /><meshBasicMaterial color="#ffffff" toneMapped={false} /></mesh>
       <Glow size={1.6} color="#74b9ff" opacity={0.5} />
     </group>
+
+    {/* Auspicious Meteor Shower (Dàn sao băng đặc biệt) */}
+    {SHOWER_METEORS_DATA.map((m, i) => (
+      <group key={'shower' + i} ref={el => (showerRefs.current[i] = el)} visible={false}>
+        <Line points={[[0, 0, 0], m.tail]} color={m.color} lineWidth={m.width * 0.9} transparent opacity={0.92} blending={THREE.AdditiveBlending} />
+        <mesh>
+          <sphereGeometry args={[0.08 * (m.width / 3), 8, 8]} />
+          <meshBasicMaterial color="#ffffff" toneMapped={false} />
+        </mesh>
+        <Glow size={m.width} color={m.glowColor} opacity={0.7} />
+      </group>
+    ))}
   </>;
 }
 function Fireflies({ reduced }: { reduced: boolean }) {
@@ -564,22 +689,9 @@ function Moon() {
   const texture = useTexture('/textures/moon.jpg');
   useLayoutEffect(() => { texture.colorSpace = THREE.SRGBColorSpace; }, [texture]);
   return <group position={[-7.2,7.8,-14]}>
-    <Glow position={[0,0,-2.5]} size={16} color="#486581" opacity={.24}/>
-    <Glow position={[0,0,-2]} size={12} color="#d5cbb4" opacity={.23}/>
-    <Glow position={[0,0,-1]} size={7.5} color="#d8d9c8" opacity={.17}/>
-    {/* Iridescent Lunar Halo ring */}
-    <mesh position={[0,0,-.5]}>
-      <ringGeometry args={[2.35,2.65,64]}/>
-      <meshBasicMaterial color="#ffeaa7" transparent opacity={.18} side={THREE.DoubleSide} blending={THREE.AdditiveBlending}/>
-    </mesh>
-    <mesh position={[0,0,-.6]}>
-      <ringGeometry args={[3.2,3.48,64]}/>
-      <meshBasicMaterial color="#74b9ff" transparent opacity={.1} side={THREE.DoubleSide} blending={THREE.AdditiveBlending}/>
-    </mesh>
-    <mesh position={[0,0,-.7]}>
-      <ringGeometry args={[4.2,4.55,64]}/>
-      <meshBasicMaterial color="#ffd8a8" transparent opacity={.065} side={THREE.DoubleSide} blending={THREE.AdditiveBlending}/>
-    </mesh>
+    <Glow position={[0,0,-2.5]} size={17} color="#6887b0" opacity={.26}/>
+    <Glow position={[0,0,-2]} size={11} color="#d5cbb4" opacity={.3}/>
+    <Glow position={[0,0,-1]} size={6.5} color="#fff0c9" opacity={.32}/>
     <mesh rotation={[.14,-1.8,.2]} raycast={ignoreRaycast}>
       <sphereGeometry args={[2.1,80,64]}/>
       <meshBasicMaterial map={texture} color="#e7ddc6" toneMapped={false} fog={false}/>
@@ -625,6 +737,7 @@ function SceneAtmosphere({reduced}:{reduced:boolean}) {
     <pointLight position={[2.5, 2.3, -1]} color="#a997ee" intensity={6} distance={9} />
     <pointLight position={[...WISH_LANTERN_HOME]} color="#ffb77b" intensity={3.2} distance={3.8} decay={2} />
     <Stars radius={45} depth={30} count={1600} factor={2.1} saturation={.3} fade speed={reduced ? 0 : .08} />
+    <TwinklingStars reduced={reduced}/>
     <Glow position={[-9, 5, -20]} size={24} color="#465592" opacity={.21} />
     <Glow position={[12, 4, -22]} size={26} color="#246c83" opacity={.17} />
   </>;
@@ -656,7 +769,7 @@ function World(props:Props) {
   useFrame(()=>{if(readyFrames.current<3){readyFrames.current++;if(readyFrames.current===3)props.onReady();}});
   return <>
     <SceneAtmosphere reduced={props.reduced} />
-    <ShootingStars reduced={props.reduced} />
+    <ShootingStars reduced={props.reduced} showerTrigger={props.showerTrigger} />
     <SceneEntry reduced={props.reduced}>
       <Moon/>
       <SkyLanterns onRead={props.onRead} reduced={props.reduced}/>
@@ -676,6 +789,7 @@ function World(props:Props) {
       <group onClick={e=>{e.stopPropagation();props.onWrite();}} onPointerOver={()=>{document.body.style.cursor='pointer';}} onPointerOut={()=>{document.body.style.cursor='auto';}}><StaticMaiden reduced={props.reduced}/></group>
       <StaticLanterns onRead={props.onRead} reduced={props.reduced}/>
       {props.lanterns.map(lantern=><MovingWishLantern key={lantern.id} lantern={lantern} onWrite={props.onWrite} onRead={props.onRead} onRetire={props.onRetire} reduced={props.reduced}/>)}
+      {!props.reduced && props.lanterns.filter(lantern=>lantern.releasedAt!==null).map(lantern=><LanternRelease key={lantern.id} lantern={lantern}/>)}
     </SceneEntry>
     <CameraRig followId={props.followId} homeRevision={props.homeRevision} reduced={props.reduced} entry={props.entry}/>
   </>;
