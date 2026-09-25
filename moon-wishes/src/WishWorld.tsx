@@ -162,7 +162,7 @@ function CameraRig({followId,homeRevision,reduced,entry}:Pick<Props,'followId'|'
   const {camera,size}=useThree();
 
   useEffect(()=>{
-    const distance=size.width/size.height<.85?23:17.5;
+    const distance=size.width/size.height<.85?21.5:17.5;
     homePosition.current.set(.23,.25,1).normalize().multiplyScalar(distance).add(homeTarget.current);
     introPosition.current.set(distance * 0.38, 11.2, distance * 1.25);
     introTarget.current.set(-1.4, 4.2, -2.8);
@@ -681,7 +681,7 @@ function World(props:Props) {
   </>;
 }
 function WishWorld(props:Props) {
-  return <Canvas shadows dpr={[1,1.25]} camera={{position:[4,6,19],fov:43}} gl={{antialias:true,alpha:true,powerPreference:'high-performance',toneMapping:THREE.ACESFilmicToneMapping,toneMappingExposure:1.05}}><World {...props}/></Canvas>;
+  return <Canvas shadows dpr={[1,2]} camera={{position:[4,6,19],fov:43}} gl={{antialias:true,alpha:true,powerPreference:'high-performance',toneMapping:THREE.ACESFilmicToneMapping,toneMappingExposure:1.05}}><World {...props}/></Canvas>;
 }
 
 export default memo(WishWorld);
