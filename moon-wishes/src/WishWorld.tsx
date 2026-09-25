@@ -154,6 +154,8 @@ function CameraRig({followId,homeRevision,reduced,entry}:Pick<Props,'followId'|'
 
   const hasEntered=useRef(entry > 0);
   const swoopStart=useRef<number|null>(null);
+  const swoopFromPos=useRef(new THREE.Vector3());
+  const swoopFromTarget=useRef(new THREE.Vector3());
   const introPosition=useRef(new THREE.Vector3());
   const introTarget=useRef(new THREE.Vector3(-1.4, 4.2, -2.8));
 
@@ -181,7 +183,10 @@ function CameraRig({followId,homeRevision,reduced,entry}:Pick<Props,'followId'|'
   useEffect(() => {
     if (entry > 0 && !hasEntered.current) {
       hasEntered.current = true;
-      if (!reduced) {
+      if (!reduced && controls.current) {
+        // Record exact current camera position & target so there is ZERO jump or stutter
+        swoopFromPos.current.copy(camera.position);
+        swoopFromTarget.current.copy(controls.current.target);
         swoopStart.current = performance.now() / 1000;
       } else {
         camera.position.copy(homePosition.current);
@@ -206,17 +211,23 @@ function CameraRig({followId,homeRevision,reduced,entry}:Pick<Props,'followId'|'
       return;
     }
 
-    // 2. Cinematic entry swoop
+    // 2. Cinematic entry swoop with smooth S-curve acceleration & deceleration (zero jerk at start)
     if (swoopStart.current !== null) {
       const elapsed = now - swoopStart.current;
-      const duration = 2.4;
+      const duration = 2.6;
       const p = Math.min(1, elapsed / duration);
-      // Quintic ease out for silky deceleration
-      const ease = 1 - Math.pow(1 - p, 4);
 
-      controls.current.target.lerpVectors(introTarget.current, homeTarget.current, ease);
-      camera.position.lerpVectors(introPosition.current, homePosition.current, ease);
-      camera.position.y += Math.sin(p * Math.PI) * 0.65;
+      // Smooth S-curve quartic ease-in-out: velocity begins at 0, accelerates gently, glides to a stop
+      const ease = p < 0.5 
+        ? 8 * p * p * p * p 
+        : 1 - Math.pow(-2 * p + 2, 4) / 2;
+
+      controls.current.target.lerpVectors(swoopFromTarget.current, homeTarget.current, ease);
+      camera.position.lerpVectors(swoopFromPos.current, homePosition.current, ease);
+
+      // Parabolic arc with zero derivative at 0 (no vertical popping)
+      const arc = Math.pow(Math.sin(p * Math.PI), 2) * 0.45;
+      camera.position.y += arc;
       controls.current.update();
 
       if (p >= 1) {
@@ -253,12 +264,322 @@ function CameraRig({followId,homeRevision,reduced,entry}:Pick<Props,'followId'|'
     }}
   />;
 }
+const starShape = (() => {
+  const shape = new THREE.Shape();
+  for (let i = 0; i < 10; i++) {
+    const a = (i * Math.PI) / 5 - Math.PI / 2;
+    const r = i % 2 === 0 ? 0.38 : 0.155;
+    const x = Math.cos(a) * r, y = Math.sin(a) * r;
+    if (i === 0) shape.moveTo(x, y);
+    else shape.lineTo(x, y);
+  }
+  shape.closePath();
+  return shape;
+})();
+
+function StarLantern({ position, rotation = [0, 0, 0], scale = 1, standing = false, reduced }: { position: Point; rotation?: Point; scale?: number; standing?: boolean; reduced: boolean }) {
+  const group = useRef<THREE.Group>(null);
+  const geo = useMemo(() => {
+    const g = new THREE.ExtrudeGeometry(starShape, { depth: 0.05, bevelEnabled: true, bevelThickness: 0.015, bevelSize: 0.015, bevelSegments: 3 });
+    g.center();
+    return g;
+  }, []);
+  useEffect(() => () => geo.dispose(), [geo]);
+
+  useFrame(({ clock }) => {
+    if (!group.current || reduced) return;
+    const t = clock.elapsedTime;
+    if (standing) {
+      group.current.rotation.y = rotation[1] + Math.sin(t * 0.8) * 0.04;
+    } else {
+      group.current.rotation.z = rotation[2] + Math.sin(t * 1.1 + position[0]) * 0.07;
+      group.current.rotation.x = rotation[0] + Math.cos(t * 0.9 + position[2]) * 0.05;
+    }
+  });
+
+  return <group ref={group} position={position} rotation={rotation as [number, number, number]} scale={scale}>
+    {/* Translucent cellophane star body */}
+    <mesh geometry={geo} castShadow>
+      <meshStandardMaterial color="#ff2e2e" emissive="#ff1a1a" emissiveIntensity={0.88} roughness={0.35} opacity={0.9} transparent side={THREE.DoubleSide} />
+    </mesh>
+    {/* Bamboo center ring */}
+    <mesh><torusGeometry args={[0.138, 0.008, 8, 36]} /><meshStandardMaterial color="#fcd462" metalness={0.4} roughness={0.5} /></mesh>
+    {/* Bamboo rim lines to 5 points */}
+    {Array.from({ length: 5 }, (_, i) => {
+      const a = (i * 2 * Math.PI) / 5 - Math.PI / 2;
+      return <Line key={i} points={[[0, 0, 0], [Math.cos(a) * 0.38, Math.sin(a) * 0.38, 0]]} color="#fcd462" lineWidth={1.2} />;
+    })}
+    {/* Bamboo pole if standing */}
+    {standing && <group position={[0, -0.65, 0]}>
+      <mesh castShadow><cylinderGeometry args={[0.012, 0.014, 1.25, 12]} /><meshStandardMaterial color="#c29958" roughness={0.7} /></mesh>
+      {[-0.3, 0, 0.3].map((y, i) => <mesh key={i} position={[0, y, 0]}><torusGeometry args={[0.015, 0.003, 6, 16]} /><meshStandardMaterial color="#8e6834" /></mesh>)}
+    </group>}
+    {/* Hanging cord if hung */}
+    {!standing && <Line points={[[0, 0.38, 0], [0, 0.9, 0]]} color="#d4af37" lineWidth={1} />}
+    {/* Flowing colorful streamers */}
+    <group position={[0, -0.36, 0]}>
+      {[-0.07, 0, 0.07].map((x, i) => <Line key={i} points={[[x, 0, 0], [x * 1.3, -0.24, 0.02], [x * 1.6, -0.45, 0.04]]} color={['#ff5e57', '#ffd32a', '#0be881'][i]} lineWidth={1.5} />)}
+    </group>
+    {/* Warm glowing heart light */}
+    {standing && <pointLight color="#ff8243" intensity={2.2} distance={3.2} decay={2} />}
+    <Glow size={1.8} color="#ff793f" opacity={0.3} />
+  </group>;
+}
+function MoonClouds({ reduced }: { reduced: boolean }) {
+  const group = useRef<THREE.Group>(null);
+  const puffs = useMemo(() => {
+    const rng = random(9931);
+    return Array.from({ length: 22 }, (_, i) => {
+      const angle = (i / 22) * Math.PI * 2 + (rng() - 0.5) * 0.25;
+      const radius = 3.6 + rng() * 0.8;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      const y = -0.28 - rng() * 0.72;
+      const scale = 0.58 + rng() * 0.52;
+      return { x, y, z, scale, phase: rng() * Math.PI * 2 };
+    });
+  }, []);
+  const mists = useMemo(() => {
+    const rng = random(7315);
+    return Array.from({ length: 8 }, (_, i) => {
+      const angle = (i / 8) * Math.PI * 2 + (rng() - 0.5) * 0.3;
+      const radius = 2.8 + rng() * 1.2;
+      return {
+        x: Math.cos(angle) * radius,
+        y: 0.38 + rng() * 0.08,
+        z: Math.sin(angle) * radius,
+        scaleX: 1.1 + rng() * 0.5,
+        scaleZ: 0.9 + rng() * 0.4,
+      };
+    });
+  }, []);
+
+  useFrame(({ clock }, delta) => {
+    if (!group.current || reduced) return;
+    group.current.rotation.y += delta * 0.02;
+  });
+
+  return <group ref={group}>
+    {/* Floating base celestial clouds */}
+    {puffs.map((p, i) => <group key={i} position={[p.x, p.y, p.z]} scale={p.scale}>
+      <mesh receiveShadow={false}>
+        <sphereGeometry args={[1, 16, 12]} />
+        <meshStandardMaterial color="#d4e8f5" roughness={0.96} transparent opacity={0.38} depthWrite={false} emissive="#4d6f88" emissiveIntensity={0.2} />
+      </mesh>
+      <mesh position={[0.42, 0.12, -0.2]} scale={0.76}>
+        <sphereGeometry args={[1, 12, 10]} />
+        <meshStandardMaterial color="#e8f3fc" roughness={0.96} transparent opacity={0.32} depthWrite={false} emissive="#4d6f88" emissiveIntensity={0.18} />
+      </mesh>
+      <mesh position={[-0.38, -0.08, 0.25]} scale={0.7}>
+        <sphereGeometry args={[1, 12, 10]} />
+        <meshStandardMaterial color="#c2ddf0" roughness={0.96} transparent opacity={0.34} depthWrite={false} emissive="#4d6f88" emissiveIntensity={0.19} />
+      </mesh>
+    </group>)}
+    {/* Soft ground mists around island perimeter */}
+    {mists.map((m, i) => <mesh key={'mist' + i} position={[m.x, m.y, m.z]} scale={[m.scaleX, 0.06, m.scaleZ]}>
+      <sphereGeometry args={[0.9, 16, 8]} />
+      <meshStandardMaterial color="#eaf4fb" roughness={1} transparent opacity={0.22} depthWrite={false} emissive="#628ea8" emissiveIntensity={0.18} />
+    </mesh>)}
+  </group>;
+}
+function FallingLeaves({ reduced }: { reduced: boolean }) {
+  const mesh = useRef<THREE.InstancedMesh>(null);
+  const leaves = useMemo(() => {
+    const rng = random(5512);
+    return Array.from({ length: 36 }, () => ({
+      x: (rng() - 0.5) * 5.2,
+      y: 1.2 + rng() * 4.4,
+      z: (rng() - 0.5) * 4.6,
+      speedY: 0.22 + rng() * 0.32,
+      swaySpeed: 1.1 + rng() * 1.3,
+      swayDist: 0.22 + rng() * 0.32,
+      rotSpeed: 0.7 + rng() * 1.5,
+      phase: rng() * Math.PI * 2,
+      size: 0.042 + rng() * 0.032,
+    }));
+  }, []);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+
+  useFrame(({ clock }, delta) => {
+    if (!mesh.current || reduced) return;
+    const t = clock.elapsedTime;
+    leaves.forEach((l, i) => {
+      l.y -= delta * l.speedY;
+      if (l.y < 0.42) {
+        l.y = 5.2 + Math.random() * 0.4;
+      }
+      const currX = l.x + Math.sin(t * l.swaySpeed + l.phase) * l.swayDist;
+      const currZ = l.z + Math.cos(t * (l.swaySpeed * 0.8) + l.phase) * (l.swayDist * 0.7);
+      dummy.position.set(currX, l.y, currZ);
+      dummy.rotation.set(t * l.rotSpeed + l.phase, t * (l.rotSpeed * 0.7), Math.sin(t * 1.5 + l.phase));
+      dummy.scale.set(l.size * 1.3, l.size * 0.25, l.size);
+      dummy.updateMatrix();
+      mesh.current!.setMatrixAt(i, dummy.matrix);
+    });
+    mesh.current.instanceMatrix.needsUpdate = true;
+  });
+
+  return <instancedMesh ref={mesh} args={[undefined, undefined, leaves.length]} frustumCulled={false}>
+    <coneGeometry args={[1, 1.8, 4]} />
+    <meshStandardMaterial color="#fcd462" emissive="#e5a93b" emissiveIntensity={0.35} roughness={0.65} side={THREE.DoubleSide} />
+  </instancedMesh>;
+}
+function ShootingStars({ reduced }: { reduced: boolean }) {
+  const s0 = useRef<THREE.Group>(null);
+  const s1 = useRef<THREE.Group>(null);
+
+  useFrame(({ clock }) => {
+    if (reduced) return;
+    const t = clock.elapsedTime;
+    // Meteor 0: cycle 6.4s, visible for 0.7s
+    const m0 = t % 6.4;
+    if (s0.current) {
+      if (m0 < 0.7) {
+        const p = m0 / 0.7;
+        const x = 15 - p * 26;
+        const y = 16 - p * 11;
+        const z = -17 - p * 5;
+        const fade = Math.sin(p * Math.PI);
+        s0.current.visible = true;
+        s0.current.position.set(x, y, z);
+        s0.current.scale.setScalar(fade * 1.2);
+      } else {
+        s0.current.visible = false;
+      }
+    }
+    // Meteor 1: cycle 9.6s, offset 4.2s, visible for 0.8s
+    const m1 = (t + 4.2) % 9.6;
+    if (s1.current) {
+      if (m1 < 0.8) {
+        const p = m1 / 0.8;
+        const x = -13 + p * 24;
+        const y = 17 - p * 12;
+        const z = -21 - p * 4;
+        const fade = Math.sin(p * Math.PI);
+        s1.current.visible = true;
+        s1.current.position.set(x, y, z);
+        s1.current.scale.setScalar(fade * 1.1);
+      } else {
+        s1.current.visible = false;
+      }
+    }
+  });
+
+  if (reduced) return null;
+  return <>
+    <group ref={s0} visible={false}>
+      <Line points={[[0, 0, 0], [2.4, 1.05, 0.35]]} color="#ffffff" lineWidth={2.4} transparent opacity={0.85} blending={THREE.AdditiveBlending} />
+      <mesh><sphereGeometry args={[0.075, 8, 8]} /><meshBasicMaterial color="#ffffff" toneMapped={false} /></mesh>
+      <Glow size={1.8} color="#ffeaa7" opacity={0.55} />
+    </group>
+    <group ref={s1} visible={false}>
+      <Line points={[[0, 0, 0], [-2.5, 1.25, 0.3]]} color="#e0f2fe" lineWidth={2.2} transparent opacity={0.8} blending={THREE.AdditiveBlending} />
+      <mesh><sphereGeometry args={[0.065, 8, 8]} /><meshBasicMaterial color="#ffffff" toneMapped={false} /></mesh>
+      <Glow size={1.6} color="#74b9ff" opacity={0.5} />
+    </group>
+  </>;
+}
+function Fireflies({ reduced }: { reduced: boolean }) {
+  const mesh = useRef<THREE.InstancedMesh>(null);
+  const flies = useMemo(() => {
+    const rng = random(4812);
+    return Array.from({ length: 26 }, () => ({
+      x: (rng() - 0.5) * 6.5,
+      y: 0.9 + rng() * 3.6,
+      z: 0.2 + (rng() - 0.5) * 5.2,
+      speedX: 0.35 + rng() * 0.45,
+      speedY: 0.4 + rng() * 0.5,
+      speedZ: 0.3 + rng() * 0.4,
+      phase: rng() * Math.PI * 2,
+      size: 0.028 + rng() * 0.022,
+    }));
+  }, []);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+
+  useFrame(({ clock }) => {
+    if (!mesh.current || reduced) return;
+    const t = clock.elapsedTime;
+    flies.forEach((f, i) => {
+      const pulse = Math.pow(Math.sin(t * 2.8 + f.phase), 4);
+      const currX = f.x + Math.sin(t * f.speedX + f.phase) * 0.45;
+      const currY = f.y + Math.cos(t * f.speedY + f.phase) * 0.32;
+      const currZ = f.z + Math.sin(t * f.speedZ + f.phase) * 0.4;
+      dummy.position.set(currX, currY, currZ);
+      dummy.scale.setScalar(f.size * (0.4 + pulse * 1.1));
+      dummy.updateMatrix();
+      mesh.current!.setMatrixAt(i, dummy.matrix);
+    });
+    mesh.current.instanceMatrix.needsUpdate = true;
+  });
+
+  return <instancedMesh ref={mesh} args={[undefined, undefined, flies.length]} frustumCulled={false}>
+    <sphereGeometry args={[1, 10, 8]} />
+    <meshBasicMaterial color="#ffeaa7" toneMapped={false} />
+  </instancedMesh>;
+}
+function BloomingLotus({ position, scale = 1 }: { position: Point; scale?: number }) {
+  const petals = useMemo(() => Array.from({ length: 8 }, (_, i) => ({ angle: (i / 8) * Math.PI * 2 })), []);
+  return <group position={position} scale={scale}>
+    <mesh position={[0, 0.005, 0]} rotation-x={-Math.PI / 2} receiveShadow>
+      <circleGeometry args={[0.22, 24]} />
+      <meshStandardMaterial color="#416b53" roughness={0.8} />
+    </mesh>
+    {petals.map((p, i) => <group key={i} rotation-y={p.angle}>
+      <mesh position={[0.07, 0.045, 0]} rotation-z={-0.65} scale={[0.08, 0.035, 0.055]} castShadow>
+        <sphereGeometry args={[1, 12, 10]} />
+        <meshPhysicalMaterial color={i % 2 ? '#f8b4b8' : '#ffffff'} emissive="#d67b84" emissiveIntensity={0.25} roughness={0.4} />
+      </mesh>
+    </group>)}
+    <mesh position={[0, 0.045, 0]}>
+      <cylinderGeometry args={[0.035, 0.035, 0.02, 16]} />
+      <meshStandardMaterial color="#ffcf4b" emissive="#ffa502" emissiveIntensity={0.5} roughness={0.4} />
+    </mesh>
+  </group>;
+}
+function MoonFlora() {
+  const osmanthus = useMemo(() => {
+    const rng = random(6129);
+    return Array.from({ length: 32 }, () => ({
+      x: (rng() - 0.5) * 5.2,
+      z: (rng() - 0.5) * 4.8,
+      rot: rng() * Math.PI * 2,
+      size: 0.032 + rng() * 0.025,
+      color: rng() > 0.4 ? '#fcd462' : '#ffffff',
+    })).filter(f => Math.hypot(f.x, f.z) > 0.8 && Math.hypot(f.x, f.z) < 3.2);
+  }, []);
+
+  return <group>
+    <BloomingLotus position={[-1.75, 0.38, 1.45]} scale={0.9} />
+    <BloomingLotus position={[2.1, 0.36, 1.6]} scale={0.75} />
+    {osmanthus.map((o, i) => <group key={i} position={[o.x, 0.36, o.z]} rotation-y={o.rot} scale={o.size}>
+      {[0, 1, 2, 3].map(j => <mesh key={j} position={[Math.cos(j * Math.PI / 2) * 0.7, 0.005, Math.sin(j * Math.PI / 2) * 0.7]} scale={[0.5, 0.1, 0.35]}>
+        <sphereGeometry args={[1, 8, 6]} />
+        <meshStandardMaterial color={o.color} emissive={o.color} emissiveIntensity={0.3} roughness={0.7} />
+      </mesh>)}
+      <mesh position={[0, 0.01, 0]}><cylinderGeometry args={[0.2, 0.2, 0.04, 8]} /><meshStandardMaterial color="#e67e22" roughness={0.8} /></mesh>
+    </group>)}
+  </group>;
+}
 function Moon() {
   const texture = useTexture('/textures/moon.jpg');
   useLayoutEffect(() => { texture.colorSpace = THREE.SRGBColorSpace; }, [texture]);
   return <group position={[-7.2,7.8,-14]}>
-    <Glow position={[0,0,-2]} size={13} color="#d5cbb4" opacity={.23}/>
+    <Glow position={[0,0,-2.5]} size={16} color="#486581" opacity={.24}/>
+    <Glow position={[0,0,-2]} size={12} color="#d5cbb4" opacity={.23}/>
     <Glow position={[0,0,-1]} size={7.5} color="#d8d9c8" opacity={.17}/>
+    {/* Iridescent Lunar Halo ring */}
+    <mesh position={[0,0,-.5]}>
+      <ringGeometry args={[2.35,2.65,64]}/>
+      <meshBasicMaterial color="#ffeaa7" transparent opacity={.18} side={THREE.DoubleSide} blending={THREE.AdditiveBlending}/>
+    </mesh>
+    <mesh position={[0,0,-.6]}>
+      <ringGeometry args={[3.2,3.48,64]}/>
+      <meshBasicMaterial color="#74b9ff" transparent opacity={.1} side={THREE.DoubleSide} blending={THREE.AdditiveBlending}/>
+    </mesh>
+    <mesh position={[0,0,-.7]}>
+      <ringGeometry args={[4.2,4.55,64]}/>
+      <meshBasicMaterial color="#ffd8a8" transparent opacity={.065} side={THREE.DoubleSide} blending={THREE.AdditiveBlending}/>
+    </mesh>
     <mesh rotation={[.14,-1.8,.2]} raycast={ignoreRaycast}>
       <sphereGeometry args={[2.1,80,64]}/>
       <meshBasicMaterial map={texture} color="#e7ddc6" toneMapped={false} fog={false}/>
@@ -281,47 +602,16 @@ function SkyLanterns({onRead,reduced}:Pick<Props,'onRead'|'reduced'>) {
     <latheGeometry args={[profile,12]}/><meshStandardMaterial color="#ffffff" emissive="#ffb868" emissiveIntensity={1.3} roughness={.8}/>
   </instancedMesh>;
 }
-const StaticBanyan=memo(Banyan),StaticIsland=memo(MoonIsland),StaticMaiden=memo(MoonMaiden),StaticRabbit=memo(MoonRabbit),StaticTeaTable=memo(MoonTeaTable),StaticLanterns=memo(Lanterns);
-function SceneAtmosphere({entry,reduced}:{entry:number;reduced:boolean}) {
-  const {scene} = useThree();
-  const dirLight = useRef<THREE.DirectionalLight>(null);
-  const lanternLight = useRef<THREE.PointLight>(null);
-  const progress = useRef(entry > 0 || reduced ? 1 : 0);
-
-  useFrame((_, delta) => {
-    if (reduced) return;
-    if (entry > 0 && progress.current < 1) {
-      progress.current = Math.min(1, progress.current + delta / 2.3);
-    }
-    const t = progress.current;
-    const ease = 1 - Math.pow(1 - t, 3);
-
-    // Fog: expands from misty [18, 46] to clear [30, 67]
-    if (scene.fog && 'near' in scene.fog) {
-      scene.fog.near = THREE.MathUtils.lerp(18, 30, ease);
-      scene.fog.far = THREE.MathUtils.lerp(46, 67, ease);
-    }
-
-    // Moonlight: increases from 1.15 to 2.4
-    if (dirLight.current) {
-      dirLight.current.intensity = THREE.MathUtils.lerp(1.15, 2.4, ease);
-    }
-
-    // Lantern light: awakens from 1.8 to 3.2
-    if (lanternLight.current) {
-      lanternLight.current.intensity = THREE.MathUtils.lerp(1.8, 3.2, ease);
-    }
-  });
-
+const StaticBanyan=memo(Banyan),StaticIsland=memo(MoonIsland),StaticMaiden=memo(MoonMaiden),StaticRabbit=memo(MoonRabbit),StaticTeaTable=memo(MoonTeaTable),StaticLanterns=memo(Lanterns),StaticFlora=memo(MoonFlora);
+function SceneAtmosphere({reduced}:{reduced:boolean}) {
   return <>
-    <fog attach="fog" args={['#071221', reduced ? 30 : 18, reduced ? 67 : 46]} />
-    <ambientLight intensity={.25} color="#9fbada" />
+    <fog attach="fog" args={['#071221', reduced ? 30 : 25, reduced ? 67 : 62]} />
+    <ambientLight intensity={.28} color="#9fbada" />
     <hemisphereLight args={['#a9cce3', '#252640', .85]} />
     <directionalLight
-      ref={dirLight}
       position={[-4, 9, 6]}
       color="#e3dabd"
-      intensity={reduced ? 2.4 : 1.15}
+      intensity={2.35}
       castShadow
       shadow-mapSize={[1024, 1024]}
       shadow-camera-left={-7}
@@ -333,52 +623,31 @@ function SceneAtmosphere({entry,reduced}:{entry:number;reduced:boolean}) {
     <directionalLight position={[4, 5, -7]} color="#69c1d4" intensity={2.5} />
     <pointLight position={[-2, 2, 1.8]} color="#f2b96d" intensity={7} distance={8} />
     <pointLight position={[2.5, 2.3, -1]} color="#a997ee" intensity={6} distance={9} />
-    <pointLight ref={lanternLight} position={[...WISH_LANTERN_HOME]} color="#ffb77b" intensity={reduced ? 3.2 : 1.8} distance={3.8} decay={2} />
+    <pointLight position={[...WISH_LANTERN_HOME]} color="#ffb77b" intensity={3.2} distance={3.8} decay={2} />
     <Stars radius={45} depth={30} count={1600} factor={2.1} saturation={.3} fade speed={reduced ? 0 : .08} />
     <Glow position={[-9, 5, -20]} size={24} color="#465592" opacity={.21} />
     <Glow position={[12, 4, -22]} size={26} color="#246c83" opacity={.17} />
   </>;
 }
-function SceneEntry({entry,reduced,children}:{entry:number;reduced:boolean;children:ReactNode}) {
+function SceneEntry({reduced,children}:{reduced:boolean;children:ReactNode}) {
   const group=useRef<THREE.Group>(null);
-  const entryProgress=useRef(entry > 0 || reduced ? 1 : 0);
-  const hasTriggered=useRef(entry > 0);
 
-  useEffect(() => {
-    if (entry > 0 && !hasTriggered.current) {
-      hasTriggered.current = true;
-      entryProgress.current = 0;
-    }
-  }, [entry]);
-
-  useFrame(({ clock }, delta) => {
+  useFrame(({ clock }) => {
     if (!group.current) return;
     if (reduced) {
       group.current.position.set(0, 0, 0);
       group.current.rotation.set(0, 0, 0);
       return;
     }
-
-    if (entry > 0 && entryProgress.current < 1) {
-      entryProgress.current = Math.min(1, entryProgress.current + delta / 2.4);
-    }
-
-    const t = entryProgress.current;
-    const ease = 1 - Math.pow(1 - t, 4);
-
-    // Subtle organic lift without jarring jump: starts at -0.16m and ascends smoothly
-    const baseLift = THREE.MathUtils.lerp(-0.16, 0, ease);
     // Celestial island weightless hover
-    const hover = Math.sin(clock.elapsedTime * 0.7) * 0.022;
-
-    group.current.position.y = baseLift + hover;
-    group.current.rotation.y = Math.sin(clock.elapsedTime * 0.35) * 0.006 * (1 - ease * 0.5);
+    group.current.position.y = Math.sin(clock.elapsedTime * 0.7) * 0.022;
+    group.current.rotation.y = Math.sin(clock.elapsedTime * 0.35) * 0.005;
   });
 
   return <group ref={group}>
     {children}
     {!reduced && (
-      <Sparkles count={entryProgress.current < 1 ? 52 : 36} scale={[10, 6, 8]} size={2} speed={0.25} color="#ffd48a" position={[0, 2.8, 0]} />
+      <Sparkles count={42} scale={[10, 6, 8]} size={2} speed={0.25} color="#ffd48a" position={[0, 2.8, 0]} />
     )}
   </group>;
 }
@@ -386,11 +655,24 @@ function World(props:Props) {
   const readyFrames=useRef(0);
   useFrame(()=>{if(readyFrames.current<3){readyFrames.current++;if(readyFrames.current===3)props.onReady();}});
   return <>
-    <SceneAtmosphere entry={props.entry} reduced={props.reduced} />
-    <SceneEntry entry={props.entry} reduced={props.reduced}>
+    <SceneAtmosphere reduced={props.reduced} />
+    <ShootingStars reduced={props.reduced} />
+    <SceneEntry reduced={props.reduced}>
       <Moon/>
       <SkyLanterns onRead={props.onRead} reduced={props.reduced}/>
+      <MoonClouds reduced={props.reduced} />
       <StaticIsland/><StaticBanyan/><StaticRabbit reduced={props.reduced}/><StaticTeaTable reduced={props.reduced}/>
+      <StaticFlora />
+      <FallingLeaves reduced={props.reduced} />
+      <Fireflies reduced={props.reduced} />
+      {/* 1 Standing Star Lantern planted proudly on bamboo pole on the right foreground */}
+      <StarLantern position={[2.15, 1.65, 1.8]} rotation={[0, -0.45, 0]} standing={true} reduced={props.reduced} scale={1.05} />
+      {/* 1 Cute small star lantern resting near the moon rabbit */}
+      <StarLantern position={[0.78, 0.46, 2.38]} rotation={[0.45, -0.32, -0.35]} standing={false} reduced={props.reduced} scale={0.52} />
+      {/* 3 Hanging Star Lanterns in the Banyan Tree */}
+      <StarLantern position={[-1.38, 3.45, 0.85]} rotation={[0.08, 0.4, -0.05]} reduced={props.reduced} scale={0.78} />
+      <StarLantern position={[1.45, 3.55, 0.6]} rotation={[-0.05, -0.3, 0.08]} reduced={props.reduced} scale={0.75} />
+      <StarLantern position={[-0.15, 4.35, -1.05]} rotation={[0.1, -0.25, 0.04]} reduced={props.reduced} scale={0.65} />
       <group onClick={e=>{e.stopPropagation();props.onWrite();}} onPointerOver={()=>{document.body.style.cursor='pointer';}} onPointerOut={()=>{document.body.style.cursor='auto';}}><StaticMaiden reduced={props.reduced}/></group>
       <StaticLanterns onRead={props.onRead} reduced={props.reduced}/>
       {props.lanterns.map(lantern=><MovingWishLantern key={lantern.id} lantern={lantern} onWrite={props.onWrite} onRead={props.onRead} onRetire={props.onRetire} reduced={props.reduced}/>)}

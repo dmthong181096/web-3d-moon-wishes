@@ -8,19 +8,49 @@ const porcelain='#adc9bf',gold='#caaa69';
 function Ring({radius,y,color=gold,tube=.008}:{radius:number;y:number;color?:string;tube?:number}) {
   return <mesh position={[0,y,0]} rotation-x={Math.PI/2}><torusGeometry args={[radius,tube,8,48]}/><meshStandardMaterial color={color} metalness={.55} roughness={.4}/></mesh>;
 }
-function Mooncake({position,rotation=0,scale=1}:{position:Point;rotation?:number;scale?:number}) {
+function Mooncake({position,rotation=0,scale=1,kind='baked'}:{position:Point;rotation?:number;scale?:number;kind?:'baked'|'snow'}) {
   const geometry=useMemo(()=>{
     const shape=new THREE.Shape();
     for(let i=0;i<=144;i++){const a=i/144*Math.PI*2,r=.165*(1+.055*Math.cos(a*12)),x=Math.cos(a)*r,y=Math.sin(a)*r;if(i===0)shape.moveTo(x,y);else shape.lineTo(x,y);}
     const geo=new THREE.ExtrudeGeometry(shape,{depth:.09,bevelEnabled:true,bevelSegments:3,steps:1,bevelSize:.008,bevelThickness:.008,curveSegments:48});geo.rotateX(-Math.PI/2);return geo;
   },[]);
+  const isBaked = kind === 'baked';
+  const mainColor = isBaked ? '#c5863b' : '#faf6ef';
+  const ring1Color = isBaked ? '#e1aa57' : '#ebdcc5';
+  const ring2Color = isBaked ? '#95602e' : '#d2baa0';
+  const patternColor = isBaked ? '#e4b365' : '#e8d2ba';
   return <group position={position} rotation-y={rotation} scale={scale}>
-    <mesh geometry={geometry} castShadow receiveShadow><meshStandardMaterial color="#c5863b" roughness={.76}/></mesh>
-    <Ring radius={.139} y={.101} color="#e1aa57" tube={.006}/>
-    <Ring radius={.119} y={.102} color="#95602e" tube={.003}/>
-    {Array.from({length:8},(_,i)=>{const angle=i/8*Math.PI*2;return <Line key={i} points={Array.from({length:25},(_,j)=>{const a=j/24*Math.PI*2,r=.058+Math.cos(a)*.043,w=Math.sin(a)*.019;return [Math.cos(angle)*r-Math.sin(angle)*w,.102,Math.sin(angle)*r+Math.cos(angle)*w] as Point;})} color="#e4b365" lineWidth={1.2}/>;})}
-    <mesh position={[0,.103,0]}><cylinderGeometry args={[.022,.022,.006,16]}/><meshStandardMaterial color="#e2ac58" roughness={.7}/></mesh>
-    {Array.from({length:24},(_,i)=>{const a=i/24*Math.PI*2;return <mesh key={i} position={[Math.cos(a)*.168,.046,Math.sin(a)*.168]} rotation-y={-a}><boxGeometry args={[.012,.055,.009]}/><meshStandardMaterial color="#a9692d" roughness={.8}/></mesh>;})}
+    <mesh geometry={geometry} castShadow receiveShadow><meshStandardMaterial color={mainColor} roughness={isBaked ? .76 : .88} roughnessMap={null}/></mesh>
+    <Ring radius={.139} y={.101} color={ring1Color} tube={.006}/>
+    <Ring radius={.119} y={.102} color={ring2Color} tube={.003}/>
+    {Array.from({length:8},(_,i)=>{const angle=i/8*Math.PI*2;return <Line key={i} points={Array.from({length:25},(_,j)=>{const a=j/24*Math.PI*2,r=.058+Math.cos(a)*.043,w=Math.sin(a)*.019;return [Math.cos(angle)*r-Math.sin(angle)*w,.102,Math.sin(angle)*r+Math.cos(angle)*w] as Point;})} color={patternColor} lineWidth={1.2}/>;})}
+    <mesh position={[0,.103,0]}><cylinderGeometry args={[.022,.022,.006,16]}/><meshStandardMaterial color={patternColor} roughness={.7}/></mesh>
+    {Array.from({length:24},(_,i)=>{const a=i/24*Math.PI*2;return <mesh key={i} position={[Math.cos(a)*.168,.046,Math.sin(a)*.168]} rotation-y={-a}><boxGeometry args={[.012,.055,.009]}/><meshStandardMaterial color={isBaked ? '#a9692d' : '#dac0a5'} roughness={.8}/></mesh>;})}
+  </group>;
+}
+function FruitTray() {
+  return <group position={[-.36,.538,.36]}>
+    {/* Celadon ceramic plate */}
+    <mesh receiveShadow castShadow><cylinderGeometry args={[.24,.2,.022,48]}/><meshPhysicalMaterial color="#c2d5cc" roughness={.26} clearcoat={.7}/></mesh>
+    <Ring radius={.235} y={.014} color="#a0b8ad" tube={.004}/>
+    {/* Ripe green Pomelo (bưởi Trung thu) */}
+    <group position={[-.05,.1,.02]}>
+      <mesh castShadow scale={[1,1.14,1]}><sphereGeometry args={[.102,24,20]}/><meshStandardMaterial color="#819c48" roughness={.68}/></mesh>
+      {/* Stem & Leaf */}
+      <mesh position={[0,.118,0]}><cylinderGeometry args={[.006,.008,.03,8]}/><meshStandardMaterial color="#533c2a" roughness={.8}/></mesh>
+      <mesh position={[.018,.13,.01]} rotation={[-.3,.4,.6]} scale={[.032,.01,.065]}><sphereGeometry args={[1,12,8]}/><meshStandardMaterial color="#4d7031" roughness={.5}/></mesh>
+    </group>
+    {/* Persimmon 1 (quả hồng đỏ) */}
+    <group position={[.09,.06,-.04]}>
+      <mesh castShadow scale={[1,.78,1]}><sphereGeometry args={[.062,20,16]}/><meshStandardMaterial color="#e85b2e" roughness={.42}/></mesh>
+      {[0,1,2,3].map(i=><mesh key={i} position={[Math.cos(i*Math.PI/2)*.025,.045,Math.sin(i*Math.PI/2)*.025]} rotation-y={i*Math.PI/2} scale={[.02,.004,.035]}><boxGeometry args={[1,1,1]}/><meshStandardMaterial color="#455f32" roughness={.7}/></mesh>)}
+      <mesh position={[0,.052,0]}><cylinderGeometry args={[.004,.006,.015,6]}/><meshStandardMaterial color="#38291d"/></mesh>
+    </group>
+    {/* Persimmon 2 */}
+    <group position={[.07,.055,.09]}>
+      <mesh castShadow scale={[1,.76,1]}><sphereGeometry args={[.055,20,16]}/><meshStandardMaterial color="#f06734" roughness={.4}/></mesh>
+      {[0,1,2,3].map(i=><mesh key={i} position={[Math.cos(i*Math.PI/2)*.022,.042,Math.sin(i*Math.PI/2)*.022]} rotation-y={i*Math.PI/2} scale={[.018,.004,.03]}><boxGeometry args={[1,1,1]}/><meshStandardMaterial color="#455f32" roughness={.7}/></mesh>)}
+    </group>
   </group>;
 }
 function Teacup({position}:{position:Point}) {
@@ -47,6 +77,30 @@ function Teapot() {
     {[0,1,2,3,4].map(i=><mesh key={i} position={[Math.sin(i*1.256)*.036,.15+Math.cos(i*1.256)*.035,.178]} rotation-z={-i*1.256} scale={[.013,.026,.004]}><sphereGeometry args={[1,12,8]}/><meshStandardMaterial color="#527f7a" roughness={.35}/></mesh>)}
   </group>;
 }
+function OsmanthusVase() {
+  const profile = useMemo(() => [
+    [0.02, 0], [0.045, 0.02], [0.065, 0.08], [0.055, 0.16], [0.028, 0.22], [0.025, 0.28], [0.038, 0.3]
+  ].map(([r, y]) => new THREE.Vector2(r, y)), []);
+  return <group position={[.06, .535, -.31]}>
+    <mesh castShadow><latheGeometry args={[profile, 32]} /><meshPhysicalMaterial color="#b8d4c8" roughness={0.2} clearcoat={0.9} /></mesh>
+    <Ring radius={0.052} y={0.12} tube={0.003} />
+    {/* Twigs with fragrant golden osmanthus blossoms */}
+    <group position={[0, 0.28, 0]}>
+      <mesh position={[0.02, 0.08, 0.01]} rotation={[0.2, 0.4, 0.3]}><cylinderGeometry args={[0.003, 0.005, 0.22, 6]} /><meshStandardMaterial color="#4a3b2c" roughness={0.9} /></mesh>
+      <mesh position={[-0.02, 0.07, -0.01]} rotation={[-0.25, -0.3, -0.35]}><cylinderGeometry args={[0.003, 0.004, 0.18, 6]} /><meshStandardMaterial color="#4a3b2c" roughness={0.9} /></mesh>
+      {/* Golden blossom clusters */}
+      {[
+        [0.035, 0.14, 0.02], [-0.04, 0.16, -0.02], [0.02, 0.2, -0.01],
+        [-0.03, 0.1, 0.03], [0.01, 0.23, 0.01]
+      ].map((pos, i) => (
+        <group key={i} position={pos as Point}>
+          <mesh><sphereGeometry args={[0.016, 8, 8]} /><meshStandardMaterial color="#ffc048" emissive="#ffa801" emissiveIntensity={0.6} roughness={0.5} /></mesh>
+          <mesh position={[0.006, 0.004, 0]}><sphereGeometry args={[0.011, 6, 6]} /><meshStandardMaterial color="#ffd32a" emissive="#ffc048" emissiveIntensity={0.5} /></mesh>
+        </group>
+      ))}
+    </group>
+  </group>;
+}
 function Steam({reduced}:{reduced:boolean}) {
   const group=useRef<THREE.Group>(null);
   useFrame(({clock})=>{if(group.current)group.current.rotation.y=reduced?0:Math.sin(clock.elapsedTime*.45)*.35;});
@@ -64,9 +118,12 @@ export default function MoonTeaTable({reduced}:{reduced:boolean}) {
     <group position={[-.26,.552,-.03]}>
       <mesh receiveShadow><cylinderGeometry args={[.36,.33,.026,64]}/><meshPhysicalMaterial color="#d8ded0" roughness={.32} clearcoat={.6}/></mesh>
       <Ring radius={.348} y={.018} tube={.006}/>
-      <Mooncake position={[-.12,.023,.075]} rotation={.2}/>
-      <Mooncake position={[.115,.023,-.11]} rotation={-.25} scale={.85}/>
+      {/* 1 Baked Mooncake & 1 Snow-skin Mooncake (Bánh dẻo) */}
+      <Mooncake position={[-.12,.023,.075]} rotation={.2} kind="baked"/>
+      <Mooncake position={[.115,.023,-.11]} rotation={-.25} scale={.85} kind="snow"/>
     </group>
+    <FruitTray/>
+    <OsmanthusVase/>
     <Teapot/>
     <Teacup position={[.35,.55,.33]}/><Teacup position={[-.02,.55,.43]}/>
     <Steam reduced={reduced}/>

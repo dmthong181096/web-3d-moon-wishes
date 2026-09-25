@@ -5,3 +5,5 @@ dist/
 .npm-cache/
 .vercel/
 .openai/
+
+.vercel
